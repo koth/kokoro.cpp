@@ -208,6 +208,25 @@ not shipped in the NuGet packages):
 dotnet run --project dotnet/examples/Kokoro.Interactive -c Release -- --device cpu
 ```
 
+### Android (AAR)
+
+`android/` builds `io.github.larroy:kokoro-android`, an AAR for `arm64-v8a` and `x86_64` (minSdk 24) with a Kotlin API over the C API. ONNX Runtime comes from the `com.microsoft.onnxruntime:onnxruntime-android` dependency, and the G2P dictionaries ship as assets; models are not included:
+
+```kotlin
+val dictDir = KokoroDict.install(context)  // extracts the dictionaries once; call off the main thread
+KokoroContext(modelPath, voicesPath, dictDir.path).use { tts ->
+    val audio = tts.synthesize("Hello world.", "af_maple")  // audio.samples: mono float PCM at audio.sampleRateHz
+}
+```
+
+To build it (JDK 17 and the Android SDK with NDK 28.2.13676358; the AAR lands in `android/kokoro/build/repo/`) and run the instrumented tests on a connected device or emulator:
+
+```bash
+cd android
+./gradlew :kokoro:assembleRelease :kokoro:publishReleasePublicationToLocalRepository
+./gradlew :kokoro:connectedDebugAndroidTest   # needs models/ from `uv run bootstrap.py configure`
+```
+
 ## English G2P
 
 English words are converted to phonemes in the following order (output uses the Kokoro/misaki English phoneme set):
@@ -243,6 +262,7 @@ accent on the stressed vowel; sounds Spanish spelling lacks are written as IPA (
 - `eval_bench/`: G2P evaluation against espeak-ng (`g2p_dump`, `compare_g2p.py`, corpora).
 - `tests/`: library tests (run with `ctest`); `tests/python/`: tests for the Python tools (run with `uv run pytest`).
 - `dotnet/`, `packaging/`: .NET wrapper (`Larroy.Kokoro`) and the scripts that build its NuGet packages.
+- `android/`: Android library (`kokoro-android` AAR, Kotlin API and JNI shim).
 - `ARCHITECTURE.md`: how the components fit together.
 - `docs/`: guides ([adding voices](docs/adding-voices.md), [thread safety](docs/thread-safety.md)).
 - `scripts/`: helper scripts for data processing.
@@ -442,6 +462,25 @@ dotnet test dotnet/Kokoro.Net.sln -c Release
 dotnet run --project dotnet/examples/Kokoro.Interactive -c Release -- --device cpu
 ```
 
+### Android (AAR)
+
+`android/` 构建 `io.github.larroy:kokoro-android`，一个面向 `arm64-v8a` 和 `x86_64`（minSdk 24）的 AAR，在 C API 之上提供 Kotlin API。ONNX Runtime 来自 `com.microsoft.onnxruntime:onnxruntime-android` 依赖，G2P 词典作为 assets 一并发布；不包含模型：
+
+```kotlin
+val dictDir = KokoroDict.install(context)  // 只解压一次词典；请在主线程之外调用
+KokoroContext(modelPath, voicesPath, dictDir.path).use { tts ->
+    val audio = tts.synthesize("你好，世界。", "zf_002")  // audio.samples：单声道 float PCM，采样率 audio.sampleRateHz
+}
+```
+
+构建（需要 JDK 17 和带 NDK 28.2.13676358 的 Android SDK；AAR 输出到 `android/kokoro/build/repo/`）并在已连接的设备或模拟器上运行插桩测试：
+
+```bash
+cd android
+./gradlew :kokoro:assembleRelease :kokoro:publishReleasePublicationToLocalRepository
+./gradlew :kokoro:connectedDebugAndroidTest   # 需要 `uv run bootstrap.py configure` 下载的 models/
+```
+
 ## 英文 G2P
 
 英文单词按以下顺序转换为音素（输出为 Kokoro/misaki 英文音素集）：
@@ -469,6 +508,7 @@ python scripts/export_g2p.py checkpoint20.npz dict/g2p_en.weights
 - `eval_bench/`: 与 espeak-ng 对比的 G2P 评测（`g2p_dump`、`compare_g2p.py`、语料）。
 - `tests/`: 库测试（使用 `ctest` 运行）；`tests/python/`：Python 工具的测试（使用 `uv run pytest` 运行）。
 - `dotnet/`, `packaging/`: .NET 封装（`Larroy.Kokoro`）及构建其 NuGet 包的脚本。
+- `android/`: Android 库（`kokoro-android` AAR、Kotlin API 和 JNI 封装）。
 - `ARCHITECTURE.md`: 各组件如何协同工作（英文）。
 - `docs/`: 使用指南（[添加语音](docs/adding-voices.md)、[线程安全](docs/thread-safety.md)（英文））。
 - `scripts/`: 数据处理辅助脚本。
@@ -675,6 +715,25 @@ solución anterior, no se incluye en los paquetes NuGet):
 dotnet run --project dotnet/examples/Kokoro.Interactive -c Release -- --device cpu
 ```
 
+### Android (AAR)
+
+`android/` genera `io.github.larroy:kokoro-android`, un AAR para `arm64-v8a` y `x86_64` (minSdk 24) con una API de Kotlin sobre la API de C. ONNX Runtime viene de la dependencia `com.microsoft.onnxruntime:onnxruntime-android`, y los diccionarios de G2P se incluyen como assets; los modelos no:
+
+```kotlin
+val dictDir = KokoroDict.install(context)  // extrae los diccionarios una vez; llámalo fuera del hilo principal
+KokoroContext(modelPath, voicesPath, dictDir.path).use { tts ->
+    val audio = tts.synthesize("Hola, mundo.", "ef_dora")  // audio.samples: PCM float mono a audio.sampleRateHz
+}
+```
+
+Para compilarlo (JDK 17 y el SDK de Android con el NDK 28.2.13676358; el AAR queda en `android/kokoro/build/repo/`) y ejecutar las pruebas instrumentadas en un dispositivo o emulador conectado:
+
+```bash
+cd android
+./gradlew :kokoro:assembleRelease :kokoro:publishReleasePublicationToLocalRepository
+./gradlew :kokoro:connectedDebugAndroidTest   # necesita models/ de `uv run bootstrap.py configure`
+```
+
 ## G2P español
 
 `src/SpanishG2P.cpp` convierte el texto en fonemas con reglas (sin diccionario ni espeak-ng, que es GPL-3.0), siguiendo la convención de espeak-ng `es` con la que se entrenaron las voces: ortografía → fonemas (`θ` para `c`/`z`, `x` para `j`, `ʎ` para `ll`, `ʝ` para `y` ante vocal), diptongos y acento según las reglas ortográficas, y alófonos `β ð ɣ` y asimilación nasal entre palabras. Los números se leen en español (`25` → `veinticinco`).
@@ -716,6 +775,7 @@ python scripts/export_g2p.py checkpoint20.npz dict/g2p_en.weights
 - `eval_bench/`: evaluación del G2P frente a espeak-ng (`g2p_dump`, `compare_g2p.py`, corpus).
 - `tests/`: pruebas de la biblioteca (con `ctest`); `tests/python/`: pruebas de las herramientas de Python (con `uv run pytest`).
 - `dotnet/`, `packaging/`: wrapper de .NET (`Larroy.Kokoro`) y los scripts que generan sus paquetes NuGet.
+- `android/`: biblioteca de Android (AAR `kokoro-android`, API de Kotlin y capa JNI).
 - `ARCHITECTURE.md`: cómo encajan los componentes (en inglés).
 - `docs/`: guías ([añadir voces](docs/adding-voices.md), [seguridad entre hilos](docs/thread-safety.md) (en inglés)).
 - `scripts/`: scripts auxiliares de procesamiento de datos.
@@ -920,6 +980,25 @@ gebaut, nicht in den NuGet-Paketen enthalten):
 dotnet run --project dotnet/examples/Kokoro.Interactive -c Release -- --device cpu
 ```
 
+### Android (AAR)
+
+`android/` baut `io.github.larroy:kokoro-android`, ein AAR für `arm64-v8a` und `x86_64` (minSdk 24) mit einer Kotlin-API über der C-API. ONNX Runtime kommt aus der Abhängigkeit `com.microsoft.onnxruntime:onnxruntime-android`, die G2P-Wörterbücher liegen als Assets bei; Modelle sind nicht enthalten:
+
+```kotlin
+val dictDir = KokoroDict.install(context)  // entpackt die Wörterbücher einmal; nicht im Main-Thread aufrufen
+KokoroContext(modelPath, voicesPath, dictDir.path).use { tts ->
+    val audio = tts.synthesize("Hallo Welt.", "df_eva")  // audio.samples: Mono-Float-PCM mit audio.sampleRateHz
+}
+```
+
+Bauen (JDK 17 und Android SDK mit NDK 28.2.13676358; das AAR landet in `android/kokoro/build/repo/`) und die instrumentierten Tests auf einem verbundenen Gerät oder Emulator ausführen:
+
+```bash
+cd android
+./gradlew :kokoro:assembleRelease :kokoro:publishReleasePublicationToLocalRepository
+./gradlew :kokoro:connectedDebugAndroidTest   # braucht models/ aus `uv run bootstrap.py configure`
+```
+
 ## Deutscher G2P
 
 `src/german/` wandelt deutsche Wörter in dieser Reihenfolge in Phoneme um:
@@ -970,6 +1049,7 @@ python scripts/export_g2p.py checkpoint20.npz dict/g2p_en.weights
 - `eval_bench/`: G2P-Auswertung gegen espeak-ng (`g2p_dump`, `compare_g2p.py`, Korpora).
 - `tests/`: Bibliothekstests (mit `ctest`); `tests/python/`: Tests der Python-Werkzeuge (mit `uv run pytest`).
 - `dotnet/`, `packaging/`: .NET-Wrapper (`Larroy.Kokoro`) und die Skripte, die seine NuGet-Pakete bauen.
+- `android/`: Android-Bibliothek (AAR `kokoro-android`, Kotlin-API und JNI-Schicht).
 - `ARCHITECTURE.md`: wie die Komponenten zusammenspielen (auf Englisch).
 - `docs/`: Anleitungen ([Stimmen hinzufügen](docs/adding-voices.md), [Thread-Sicherheit](docs/thread-safety.md) (auf Englisch)).
 - `scripts/`: Hilfsskripte zur Datenverarbeitung.

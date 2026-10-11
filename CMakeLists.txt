@@ -37,30 +37,46 @@ endif()
 
 message(STATUS "Looking for ONNX Runtime in: ${ONNXRUNTIME_ROOT}")
 
-# Forget cached results that no longer exist (e.g. after the bundled runtime was replaced).
-foreach(var ONNXRUNTIME_LIB ONNXRUNTIME_DLL)
-    if (${var} AND NOT EXISTS "${${var}}")
-        unset(${var} CACHE)
+if (ANDROID)
+    # ONNXRUNTIME_ROOT is an extracted onnxruntime-android AAR (android/kokoro/src/main/cpp/CMakeLists.txt).
+    set(ONNXRUNTIME_INCLUDE_DIR "${ONNXRUNTIME_ROOT}/headers")
+    set(ONNXRUNTIME_LIB_DIR "${ONNXRUNTIME_ROOT}/jni/${ANDROID_ABI}")
+    if (NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h"
+            OR NOT EXISTS "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.so")
+        message(FATAL_ERROR
+            "onnxruntime-android (${ANDROID_ABI}) not found in ${ONNXRUNTIME_ROOT}; build with android/gradlew")
     endif()
-endforeach()
-# A source-built ORT puts its headers in include/onnxruntime/; the stale include/ dir still exists after the switch.
-if (ONNXRUNTIME_INCLUDE_DIR AND NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h")
-    unset(ONNXRUNTIME_INCLUDE_DIR CACHE)
+    # Linked by name: AGP packages every .so linked by full path, and libonnxruntime.so must come only from the
+    # onnxruntime-android Maven dependency so an app gets a single copy.
+    set(ONNXRUNTIME_LIB onnxruntime)
+    message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIB_DIR}/libonnxruntime.so")
+else()
+    # Forget cached results that no longer exist (e.g. after the bundled runtime was replaced).
+    foreach(var ONNXRUNTIME_LIB ONNXRUNTIME_DLL)
+        if (${var} AND NOT EXISTS "${${var}}")
+            unset(${var} CACHE)
+        endif()
+    endforeach()
+    # A source-built ORT puts its headers in include/onnxruntime/; the stale include/ dir still exists after the
+    # switch.
+    if (ONNXRUNTIME_INCLUDE_DIR AND NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h")
+        unset(ONNXRUNTIME_INCLUDE_DIR CACHE)
+    endif()
+
+    find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
+        HINTS ${ONNXRUNTIME_ROOT}/include
+        PATH_SUFFIXES onnxruntime core/session
+    )
+
+    find_library(ONNXRUNTIME_LIB onnxruntime
+        HINTS ${ONNXRUNTIME_ROOT}/lib
+    )
+
+    if (NOT (ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB))
+        message(FATAL_ERROR "ONNX Runtime not found. Run `uv run bootstrap.py configure`, or set ONNXRUNTIME_ROOT, e.g. cmake -DONNXRUNTIME_ROOT=/path/to/onnxruntime ..")
+    endif()
+    message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIB}")
 endif()
-
-find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
-    HINTS ${ONNXRUNTIME_ROOT}/include
-    PATH_SUFFIXES onnxruntime core/session
-)
-
-find_library(ONNXRUNTIME_LIB onnxruntime
-    HINTS ${ONNXRUNTIME_ROOT}/lib
-)
-
-if (NOT (ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB))
-    message(FATAL_ERROR "ONNX Runtime not found. Run `uv run bootstrap.py configure`, or set ONNXRUNTIME_ROOT, e.g. cmake -DONNXRUNTIME_ROOT=/path/to/onnxruntime ..")
-endif()
-message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIB}")
 
 file(GLOB ONNXRUNTIME_CUDA_PROVIDER
     "${ONNXRUNTIME_ROOT}/lib/*onnxruntime_providers_cuda*"
@@ -136,6 +152,9 @@ target_include_directories(kokoro PUBLIC
 )
 target_compile_definitions(kokoro PRIVATE KOKORO_BUILD KOKORO_VERSION_STRING="${PROJECT_VERSION}")
 target_link_libraries(kokoro PRIVATE kokoro_core ${ONNXRUNTIME_LIB})
+if (ANDROID)
+    target_link_directories(kokoro PRIVATE "${ONNXRUNTIME_LIB_DIR}")
+endif()
 set_target_properties(kokoro PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}

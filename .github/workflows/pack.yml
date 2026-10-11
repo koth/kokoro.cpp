@@ -101,8 +101,65 @@ jobs:
         shell: pwsh
         run: ./packaging/smoke.ps1 -Framework net8.0
 
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Cache model and voices
+        uses: actions/cache@v6
+        with:
+          path: models
+          key: kokoro-models-${{ hashFiles('bootstrap.py') }}
+          restore-keys: kokoro-models-
+          enableCrossOsArchive: true
+
+      - name: Download model and voices
+        run: uv run bootstrap.py configure --ort cpu
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build AAR
+        working-directory: android
+        run: ./gradlew --no-daemon :kokoro:assembleRelease :kokoro:publishReleasePublicationToLocalRepository
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          ram-size: 4096M
+          disk-size: 6000M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: android
+          script: ./gradlew --no-daemon :kokoro:connectedDebugAndroidTest
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: android/kokoro/build/repo
+          if-no-files-found: error
+
   publish:
-    needs: smoke
+    needs: [smoke, android]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     timeout-minutes: 30
@@ -120,6 +177,11 @@ jobs:
         with:
           name: nuget
           path: artifacts/nuget
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: android
+          path: artifacts/android
 
       - name: Check tag matches the package version
         shell: pwsh
@@ -161,4 +223,8 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME (Get-ChildItem artifacts/nuget/*.nupkg).FullName --generate-notes
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $aar = Join-Path 'artifacts/android' "io/github/larroy/kokoro-android/$version/kokoro-android-$version.aar"
+          if (-not (Test-Path -LiteralPath $aar -PathType Leaf)) { throw "Missing AAR: $aar" }
+          gh release create $env:GITHUB_REF_NAME (Get-ChildItem artifacts/nuget/*.nupkg).FullName $aar --generate-notes

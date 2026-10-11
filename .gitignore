@@ -43,3 +43,8 @@ venv/
 # .NET packaging (packaging/*.ps1, dotnet/)
 artifacts/
 obj/
+
+# Android (android/)
+.gradle/
+local.properties
+.cxx/

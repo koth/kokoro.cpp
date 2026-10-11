@@ -2,7 +2,7 @@
 
 kokoro.cpp runs the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) TTS model on ONNX Runtime. Text becomes a
 phoneme string through a per-language G2P, and the phonemes become model token ids. Everything is exposed through one
-C API, which the CLI, the .NET wrapper and any FFI consumer use.
+C API, which the CLI, the .NET wrapper, the Android library and any FFI consumer use.
 
 - [Components at a glance](#components-at-a-glance)
 - [From text to audio](#from-text-to-audio)
@@ -29,6 +29,7 @@ flowchart LR
     lib --> cli["kokoro CLI"]
     lib --> server["kokoro-server (HTTP)"]
     lib --> dotnet["Kokoro.Net (P/Invoke)"] --> nuget["NuGet packages"]
+    lib --> android["kokoro-android (JNI + Kotlin)"] --> aar["AAR"]
     core --> coretests["test_g2p / test_chunker / g2p_dump"]
     lib --> libtests["test_c_api / test_synthesis*"]
     models -->|"read at runtime"| core
@@ -44,6 +45,7 @@ flowchart LR
 | `src/server/` | HTTP server |
 | `src/chinese_english/`, `src/english/`, `src/spanish/`, `src/german/` | per-language G2P |
 | `dotnet/` | wrapper, example, tests |
+| `android/` | Android library: Gradle project, JNI shim, Kotlin API, instrumented tests |
 | `packaging/` | NuGet build scripts |
 | `dict/` | runtime G2P data |
 | `models/` | downloaded, not committed |
@@ -204,7 +206,8 @@ These are the touch points the German addition went through, in order:
    `src/kokoro_c.cpp`.
 7. Extend the CLI's `parse_language`, `parse_number_language` and usage text in `src/cli/main.cpp`.
 8. Add the .NET `KokoroLanguage` and `KokoroNumberLanguage` members in `dotnet/src/Kokoro.Net/KokoroEnums.cs`, and
-   extend `dotnet/examples/Kokoro.Interactive/CliParser.cs`.
+   extend `dotnet/examples/Kokoro.Interactive/CliParser.cs`. Add the same members (with their C values) to
+   `android/kokoro/src/main/kotlin/io/github/larroy/kokoro/KokoroEnums.kt`.
 9. Add a model and voice pack to `bootstrap.py` (`ARTIFACTS`, `VoicePack`, `VOICE_PACKS`).
 10. Add G2P goldens to `tests/test_g2p.cpp`, and a `tests/test_synthesis_<lang>.cpp` registered in
     `tests/CMakeLists.txt`.
@@ -258,6 +261,27 @@ copies `kokoro-server` next to `libkokoro`; `build.rs` links against the library
 - `Larroy.Kokoro.targets` copies the bundled `dict/` into `<output>/kokoro-dict`. Models are never packaged.
 - The package version comes from `project(KokoroCPP VERSION …)` in `CMakeLists.txt`, read by
   `dotnet/Directory.Build.props`.
+
+**Android (`android/`).**
+- `android/kokoro/src/main/cpp/CMakeLists.txt` extracts `headers/` and `jni/<abi>/` from the onnxruntime-android AAR
+  (resolved by Gradle and passed as `KOKORO_ORT_AAR`) into each ABI's build dir, then adds the repo root with
+  `add_subdirectory`. The root `CMakeLists.txt` has an `ANDROID` branch that takes ORT from that layout and links it
+  **by name** (`-lonnxruntime`): AGP packages every `.so` linked by full path, and `libonnxruntime.so` must come only
+  from the `onnxruntime-android` Maven dependency so an app gets one copy.
+- Both `libkokoro.so` and `libkokoro_jni.so` use `c++_static` and link with `-Wl,--exclude-libs,ALL`, so their dynamic
+  tables hold only the C API and the `Java_*` entry points.
+- `kokoro_jni.cpp` passes every string as a `byte[]` of real UTF-8 (JNI's string functions use modified UTF-8, which
+  mangles non-BMP characters) and throws `KokoroException(int status, byte[] message)` from `kokoro_last_error()`.
+  It always creates contexts with `KOKORO_DEVICE_CPU`.
+- `KokoroContext` serializes every call on one lock, so `close()` waits for an in-flight call; after `close()` calls
+  throw `IllegalStateException`. There is no finalizer.
+- `dict/` ships as assets under `kokoro-dict/`, staged by the `KokoroDictAssets` Gradle task with a content hash in
+  `kokoro-dict.stamp` (outside the directory and without a leading dot, since AAPT drops dotfiles).
+  `KokoroDict.install` copies the assets to `noBackupFilesDir/kokoro-dict` through a `.tmp` directory and a rename
+  whenever the installed stamp differs.
+- Consumer ProGuard rules keep the native methods and the two constructors JNI calls by name.
+- The version comes from `CMakeLists.txt` and the ORT version from `bootstrap.py`, read by regex in
+  `android/kokoro/build.gradle.kts`. The Maven coordinates are `io.github.larroy:kokoro-android`.
 
 ## Data and assets
 
@@ -331,6 +355,9 @@ The full contract is in [docs/thread-safety.md](docs/thread-safety.md).
   - `synthesis`, `synthesis_es` and `synthesis_de` need their model pair. They exit 77 when a file is missing, which
     is registered as `SKIP_RETURN_CODE 77`.
   - `g2p` pins the G2P output for zh/en/es/de, including number reading.
+- **Android instrumented tests:** `android/kokoro/src/androidTest/` runs on a device or emulator through the JNI layer.
+  The zh model and voices are bundled as androidTest assets (apps cannot read `/data/local/tmp`); the class is
+  skipped when `models/` lacks them.
 - **`uv run pytest`:** `tests/python/` covers `voice_tool.py` (including the voices-format round-trip and GGUF parsing)
   and the ONNX Runtime/CUDA choice logic in `bootstrap.py`.
 - **eval_bench:** `eval_bench/compare_g2p.py --language es|de` compares `g2p_dump` output with espeak-ng, using
@@ -342,7 +369,8 @@ The full contract is in [docs/thread-safety.md](docs/thread-safety.md).
   - `.github/workflows/ci.yml` runs `configure`, `build` and `ctest` on linux-x64, linux-arm64, macos-arm64,
     windows-x64 and windows-arm64.
   - `.github/workflows/pack.yml` builds the native libraries, runs `ctest -R c_api` and `dotnet test`, packs, smoke-tests
-    the packages (`packaging/smoke.ps1`), and publishes on `v*` tags.
+    the packages (`packaging/smoke.ps1`), and publishes on `v*` tags. Its `android` job builds the AAR, runs the
+    instrumented tests on an API 30 x86_64 emulator, and uploads the local Maven repo; the release attaches the AAR.
 
 ## Known sharp edges
 
