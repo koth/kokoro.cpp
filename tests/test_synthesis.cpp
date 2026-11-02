@@ -233,7 +233,7 @@ TEST_CASE("unknown_voice_is_reported") {
 }
 
 TEST_CASE("invalid_speed_and_flags_rejected") {
-    const float bad_speeds[] = {0.0f, -1.0f, NAN, INFINITY};
+    const float bad_speeds[] = {0.0f, -1.0f, NAN, INFINITY, 2147483648.0f, 1e20f};
     for (float speed : bad_speeds) {
         CAPTURE(speed);
         kokoro_audio audio{};

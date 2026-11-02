@@ -70,8 +70,9 @@ fn parse_voice(body: &Body, default_voice: &str) -> Result<String, RequestError>
 
 fn parse_speed(body: &Body) -> Result<f32, RequestError> {
     let Some(speed) = optional_member(body, "speed") else { return Ok(1.0) };
-    match speed.as_f64() {
-        Some(value) if value.is_finite() && value > 0.0 => Ok(value as f32),
+    // Check the f32 the engine receives: f64 values beyond f32 overflow to infinity or underflow to 0.
+    match speed.as_f64().map(|value| value as f32) {
+        Some(value) if value.is_finite() && value > 0.0 => Ok(value),
         _ => fail("'speed' must be a number > 0", Some("speed")),
     }
 }
@@ -157,6 +158,8 @@ mod tests {
         assert_eq!(rejected(r#"{"input":"x","voice":1}"#).message, "'voice' must be a string");
         assert_eq!(rejected(r#"{"input":"x","speed":0}"#).message, "'speed' must be a number > 0");
         assert_eq!(rejected(r#"{"input":"x","speed":"fast"}"#).param, Some("speed"));
+        assert_eq!(rejected(r#"{"input":"x","speed":1e300}"#).param, Some("speed"));
+        assert_eq!(rejected(r#"{"input":"x","speed":1e-60}"#).param, Some("speed"));
         let mp3 = rejected(r#"{"input":"x","response_format":"mp3"}"#);
         assert_eq!(mp3.message, "Unsupported response_format 'mp3'; kokoro-server supports wav and pcm");
         assert_eq!(mp3.param, Some("response_format"));

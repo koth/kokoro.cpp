@@ -21,6 +21,9 @@ namespace {
 
 thread_local std::string g_last_error;
 
+// Integer-speed models cast speed to int; 2^31 is the first float that int cannot hold.
+constexpr float kSpeedLimit = 2147483648.0f;
+
 kokoro_status fail(kokoro_status status, const char* message) {
     g_last_error = message;
     return status;
@@ -120,7 +123,9 @@ kokoro_status kokoro_synthesize(kokoro_ctx* ctx, const char* text, const char* v
     if (!out_audio) return fail(KOKORO_ERROR_INVALID_ARGUMENT, "out_audio is NULL");
     *out_audio = kokoro_audio{nullptr, 0, 0};
     if (!ctx || !text || !voice) return fail(KOKORO_ERROR_INVALID_ARGUMENT, "ctx, text and voice must not be NULL");
-    if (!(speed > 0.0f) || !std::isfinite(speed)) return fail(KOKORO_ERROR_INVALID_ARGUMENT, "speed must be > 0");
+    if (!(speed > 0.0f && speed < kSpeedLimit)) {
+        return fail(KOKORO_ERROR_INVALID_ARGUMENT, "speed must be > 0 and < 2^31");
+    }
     if (flags & ~KOKORO_INPUT_PHONEMES) return fail(KOKORO_ERROR_INVALID_ARGUMENT, "unknown flags");
 
     const std::vector<float>* style = nullptr;

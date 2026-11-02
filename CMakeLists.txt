@@ -181,8 +181,13 @@ elseif (UNIX)
     set_target_properties(kokoro_cli PROPERTIES INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(KOKORO_IS_TOP_LEVEL ON)
+else()
+    set(KOKORO_IS_TOP_LEVEL OFF)
+endif()
 # HTTP server: a Rust crate in src/server, built by cargo against libkokoro and copied next to it.
-option(KOKORO_BUILD_SERVER "Build kokoro-server (needs a Rust toolchain)" ON)
+option(KOKORO_BUILD_SERVER "Build kokoro-server (needs a Rust toolchain)" ${KOKORO_IS_TOP_LEVEL})
 if (KOKORO_BUILD_SERVER)
     find_program(CARGO cargo HINTS "$ENV{CARGO_HOME}/bin" "$ENV{HOME}/.cargo/bin" "$ENV{USERPROFILE}/.cargo/bin")
     if (NOT CARGO)
@@ -230,11 +235,6 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/kokoro
 )
 
-if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    set(KOKORO_IS_TOP_LEVEL ON)
-else()
-    set(KOKORO_IS_TOP_LEVEL OFF)
-endif()
 option(KOKORO_BUILD_TESTS "Build the kokoro tests" ${KOKORO_IS_TOP_LEVEL})
 if (KOKORO_BUILD_TESTS)
     enable_testing()
