@@ -53,19 +53,30 @@ fn is_blank(text: &str) -> bool {
     text.bytes().all(|b| b == b' ' || (b'\t'..=b'\r').contains(&b))
 }
 
-fn parse_input(body: &Body) -> Result<String, RequestError> {
-    match optional_member(body, "input").and_then(Value::as_str) {
-        Some(text) if !is_blank(text) => Ok(text.to_owned()),
-        _ => fail("'input' must be a non-empty string", Some("input")),
+// C strings end at the first NUL byte, so a NUL would silently truncate the value at the engine boundary.
+fn check_no_nul(text: &str, field: &'static str) -> Result<(), RequestError> {
+    if text.contains('\0') {
+        fail(format!("'{}' must not contain a NUL byte", field), Some(field))
+    } else {
+        Ok(())
     }
 }
 
+fn parse_input(body: &Body) -> Result<String, RequestError> {
+    let text = match optional_member(body, "input").and_then(Value::as_str) {
+        Some(text) if !is_blank(text) => text,
+        _ => return fail("'input' must be a non-empty string", Some("input")),
+    };
+    check_no_nul(text, "input").map(|()| text.to_owned())
+}
+
 fn parse_voice(body: &Body, default_voice: &str) -> Result<String, RequestError> {
-    match optional_member(body, "voice") {
-        None => Ok(default_voice.to_owned()),
-        Some(Value::String(voice)) => Ok(voice.clone()),
-        Some(_) => fail("'voice' must be a string", Some("voice")),
-    }
+    let voice = match optional_member(body, "voice") {
+        None => return Ok(default_voice.to_owned()),
+        Some(Value::String(voice)) => voice,
+        Some(_) => return fail("'voice' must be a string", Some("voice")),
+    };
+    check_no_nul(voice, "voice").map(|()| voice.clone())
 }
 
 fn parse_speed(body: &Body) -> Result<f32, RequestError> {
@@ -136,6 +147,16 @@ mod tests {
         assert_eq!(request.voice, "af_maple");
         assert_eq!(request.speed, 1.0);
         assert_eq!(request.format, ResponseFormat::Wav);
+    }
+
+    #[test]
+    fn nul_bytes_are_rejected_instead_of_truncated() {
+        let input = rejected(r#"{"input":"Hello\u0000world"}"#);
+        assert_eq!(input.message, "'input' must not contain a NUL byte");
+        assert_eq!(input.param, Some("input"));
+        let voice = rejected(r#"{"input":"x","voice":"af_maple\u0000"}"#);
+        assert_eq!(voice.message, "'voice' must not contain a NUL byte");
+        assert_eq!(voice.param, Some("voice"));
     }
 
     #[test]
