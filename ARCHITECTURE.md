@@ -27,6 +27,7 @@ flowchart LR
     scripts["scripts/"] -->|"vocab.txt, g2p_*.weights"| dict["dict/"]
     core["kokoro_core (static)"] --> lib["kokoro (shared, C API)"]
     lib --> cli["kokoro CLI"]
+    lib --> server["kokoro-server (HTTP)"]
     lib --> dotnet["Kokoro.Net (P/Invoke)"] --> nuget["NuGet packages"]
     core --> coretests["test_g2p / test_chunker / g2p_dump"]
     lib --> libtests["test_c_api / test_synthesis*"]
@@ -40,6 +41,7 @@ flowchart LR
 | `include/kokoro/` | public C header |
 | `src/` | engine, G2P, C API implementation |
 | `src/cli/` | CLI |
+| `src/server/` | HTTP server |
 | `src/chinese_english/`, `src/english/`, `src/spanish/`, `src/german/` | per-language G2P |
 | `dotnet/` | wrapper, example, tests |
 | `packaging/` | NuGet build scripts |
@@ -221,6 +223,19 @@ These are the touch points the German addition went through, in order:
   - `AudioPlayer` (`src/cli/audio_player.cpp`) plays the clips through miniaudio, built for playback only. The device
     opens lazily at the first clip's sample rate, and clips are never freed on the audio thread.
   - Commands: `/voice`, `/speed`, `/voices`, `/help`, `/quit`.
+
+**HTTP server (`src/server/`).** A Rust crate (axum + tokio) that links `libkokoro` through hand-written C API
+declarations (`ffi.rs`) and serves an OpenAI-compatible API. CMake builds it with cargo (`KOKORO_BUILD_SERVER`) and
+copies `kokoro-server` next to `libkokoro`; `build.rs` links against the library and sets the rpath.
+- `Engine` (`engine.rs`) owns the one context; `Audio` frees the samples with `kokoro_audio_free` on drop.
+- `AppState` (`routes.rs`) keeps the engine behind a `tokio::sync::Mutex`. A request waits for the lock without a
+  thread, then synthesizes in `spawn_blocking`, which also reads the thread-local `kokoro_last_error()`.
+- `POST /v1/audio/speech` parses the JSON body (`speech_request.rs`), then encodes the float samples as 16-bit PCM
+  WAV or raw PCM (`audio_encoding.rs`). Other formats get an OpenAI-style 400 error.
+- `GET /v1/audio/voices` lists the loaded voices; `GET /health` answers `{"status":"ok"}`.
+- The listen socket (`listener.rs`) sets `SO_REUSEADDR` (`SO_EXCLUSIVEADDRUSE` on Windows) and never
+  `SO_REUSEPORT`, so a second server on the same port fails instead of sharing it.
+- `options.rs` ports the CLI's option parsing (`src/cli/engine_options.h` values), messages and exit codes.
 
 **.NET (`dotnet/`).**
 - `KokoroNative` calls the C API through `DllImport("kokoro")`, marshalling strings as `LPUTF8Str`. Strings owned by

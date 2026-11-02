@@ -128,7 +128,7 @@ KOKORO_API size_t kokoro_voice_count(const kokoro_ctx* ctx);
 KOKORO_API const char* kokoro_voice_name(const kokoro_ctx* ctx, size_t index);
 
 /*
- * Synthesizes `text` with `voice` at `speed` (1.0 = normal, must be > 0).
+ * Synthesizes `text` with `voice` at `speed` (1.0 = normal, must be > 0 and < 2^31).
  * flags: 0 or KOKORO_INPUT_PHONEMES.
  * On success fills *out_audio; the caller must release it with kokoro_audio_free().
  * On failure *out_audio is zeroed.

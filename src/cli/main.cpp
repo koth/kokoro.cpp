@@ -2,6 +2,7 @@
 #include <kokoro/kokoro.h>
 
 #include "console.h"
+#include "engine_options.h"
 #include "interactive.h"
 #include "speed.h"
 
@@ -109,42 +110,6 @@ bool usage_error(const std::string& message) {
     return false;
 }
 
-// Maps the --lang value; returns false for anything but "auto", "en", "zh", "es" or "de".
-bool parse_number_language(const std::string& value, kokoro_number_language& language) {
-    if (value == "auto") { language = KOKORO_NUMBERS_AUTO; return true; }
-    if (value == "en") { language = KOKORO_NUMBERS_ENGLISH; return true; }
-    if (value == "zh") { language = KOKORO_NUMBERS_CHINESE; return true; }
-    if (value == "es") { language = KOKORO_NUMBERS_SPANISH; return true; }
-    if (value == "de") { language = KOKORO_NUMBERS_GERMAN; return true; }
-    return false;
-}
-
-// Maps the --language value; returns false for anything but "auto", "zh", "en", "es" or "de".
-bool parse_language(const std::string& value, kokoro_language& language) {
-    if (value == "auto") { language = KOKORO_LANGUAGE_AUTO; return true; }
-    if (value == "zh") { language = KOKORO_LANGUAGE_CHINESE_ENGLISH; return true; }
-    if (value == "en") { language = KOKORO_LANGUAGE_ENGLISH; return true; }
-    if (value == "es") { language = KOKORO_LANGUAGE_SPANISH; return true; }
-    if (value == "de") { language = KOKORO_LANGUAGE_GERMAN; return true; }
-    return false;
-}
-
-bool parse_device(const std::string& value, kokoro_device& device) {
-    if (value == "auto") { device = KOKORO_DEVICE_AUTO; return true; }
-    if (value == "cpu") { device = KOKORO_DEVICE_CPU; return true; }
-    if (value == "cuda") { device = KOKORO_DEVICE_CUDA; return true; }
-    return false;
-}
-
-bool parse_gpu_id(const std::string& value, int& gpu_id) {
-    if (value.empty()) return false;
-    char* end = nullptr;
-    const long parsed = std::strtol(value.c_str(), &end, 10);
-    if (end != value.c_str() + value.size() || parsed < 0 || parsed > INT_MAX) return false;
-    gpu_id = static_cast<int>(parsed);
-    return true;
-}
-
 // Returns false after printing a usage error.
 bool parse_args(const std::vector<std::string>& args, Options& opt) {
     bool positional_only = false;
@@ -191,23 +156,23 @@ bool parse_args(const std::vector<std::string>& args, Options& opt) {
             case Opt::Dict: opt.dict = value; break;
             case Opt::Voice: opt.voice = value; break;
             case Opt::Lang:
-                if (!parse_number_language(value, opt.number_language)) {
+                if (!kokoro_cli::parse_number_language(value, opt.number_language)) {
                     return usage_error("invalid number language '" + value + "' (must be auto, en, zh, es or de)");
                 }
                 break;
             case Opt::Language:
-                if (!parse_language(value, opt.language)) {
+                if (!kokoro_cli::parse_language(value, opt.language)) {
                     return usage_error("invalid language '" + value + "' (must be auto, zh, en, es or de)");
                 }
                 break;
             case Opt::Output: opt.output = value; break;
             case Opt::Device:
-                if (!parse_device(value, opt.device)) {
+                if (!kokoro_cli::parse_device(value, opt.device)) {
                     return usage_error("invalid device '" + value + "' (expected auto, cpu or cuda)");
                 }
                 break;
             case Opt::GpuId:
-                if (!parse_gpu_id(value, opt.gpu_id)) {
+                if (!kokoro_cli::parse_gpu_id(value, opt.gpu_id)) {
                     return usage_error("invalid GPU id '" + value + "' (must be an integer >= 0)");
                 }
                 break;

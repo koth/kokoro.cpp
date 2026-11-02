@@ -1,6 +1,8 @@
 # Build directories
 build/
 bin/
+# cargo, when run directly in the kokoro-server crate
+src/server/target/
 # Built by `uv run bootstrap.py build-ort`
 third_party/onnxruntime-src/
 out/

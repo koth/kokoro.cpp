@@ -182,6 +182,40 @@ elseif (UNIX)
     set_target_properties(kokoro_cli PROPERTIES INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(KOKORO_IS_TOP_LEVEL ON)
+else()
+    set(KOKORO_IS_TOP_LEVEL OFF)
+endif()
+# HTTP server: a Rust crate in src/server, built by cargo against libkokoro and copied next to it.
+option(KOKORO_BUILD_SERVER "Build kokoro-server (needs a Rust toolchain)" ${KOKORO_IS_TOP_LEVEL})
+if (KOKORO_BUILD_SERVER)
+    find_program(CARGO cargo HINTS "$ENV{CARGO_HOME}/bin" "$ENV{HOME}/.cargo/bin" "$ENV{USERPROFILE}/.cargo/bin")
+    if (NOT CARGO)
+        message(FATAL_ERROR
+            "cargo not found: install Rust (https://rustup.rs) or configure with -DKOKORO_BUILD_SERVER=OFF")
+    endif()
+    set(KOKORO_CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
+    set(KOKORO_CARGO_PROFILE "$<IF:$<CONFIG:Debug>,dev,release>")
+    set(KOKORO_CARGO_ENV
+        "CARGO_TARGET_DIR=${KOKORO_CARGO_TARGET_DIR}"
+        "KOKORO_LIB_DIR=$<TARGET_LINKER_FILE_DIR:kokoro>"
+        "KOKORO_INSTALL_LIBDIR=${CMAKE_INSTALL_LIBDIR}")
+    set(KOKORO_SERVER_EXE "kokoro-server${CMAKE_EXECUTABLE_SUFFIX}")
+    add_custom_target(kokoro_server ALL
+        COMMAND ${CMAKE_COMMAND} -E env ${KOKORO_CARGO_ENV}
+                "${CARGO}" build --locked --profile ${KOKORO_CARGO_PROFILE}
+                --manifest-path "${CMAKE_CURRENT_SOURCE_DIR}/src/server/Cargo.toml"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${KOKORO_CARGO_TARGET_DIR}/$<IF:$<CONFIG:Debug>,debug,release>/${KOKORO_SERVER_EXE}"
+                "$<TARGET_FILE_DIR:kokoro>/${KOKORO_SERVER_EXE}"
+        COMMENT "Building kokoro-server with cargo"
+        VERBATIM
+    )
+    add_dependencies(kokoro_server kokoro)
+    install(PROGRAMS "$<TARGET_FILE_DIR:kokoro>/${KOKORO_SERVER_EXE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
 # Install: headers, libkokoro and a CMake package (find_package(kokoro) -> kokoro::kokoro).
 install(TARGETS kokoro EXPORT kokoroTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -202,11 +236,6 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/kokoro
 )
 
-if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    set(KOKORO_IS_TOP_LEVEL ON)
-else()
-    set(KOKORO_IS_TOP_LEVEL OFF)
-endif()
 option(KOKORO_BUILD_TESTS "Build the kokoro tests" ${KOKORO_IS_TOP_LEVEL})
 if (KOKORO_BUILD_TESTS)
     enable_testing()

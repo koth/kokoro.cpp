@@ -46,6 +46,16 @@ jobs:
           python-version: "3.13"
           architecture: ${{ matrix.arch }}
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/server -> ../../build/cargo
+
       - name: Cache model and voices
         uses: actions/cache@v6
         with:
@@ -78,3 +88,13 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Lint kokoro-server
+        if: matrix.name == 'linux-x64'
+        working-directory: src/server
+        env:
+          KOKORO_LIB_DIR: ${{ github.workspace }}/build
+          CARGO_TARGET_DIR: ${{ github.workspace }}/build/cargo
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings

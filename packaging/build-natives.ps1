@@ -44,7 +44,7 @@ function Invoke-NativeBuild([hashtable]$Row) {
             throw 'ninja not found on PATH (install the VS "C++ CMake tools" component or Ninja)'
         }
         Invoke-Checked cmake @('-S', $root, '-B', $buildDir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
-            "-DONNXRUNTIME_ROOT=$ortRoot", '-DKOKORO_BUILD_EVAL=OFF')
+            "-DONNXRUNTIME_ROOT=$ortRoot", '-DKOKORO_BUILD_EVAL=OFF', '-DKOKORO_BUILD_SERVER=OFF')
         Invoke-Checked cmake @('--build', $buildDir, '--parallel')
     }
 }
