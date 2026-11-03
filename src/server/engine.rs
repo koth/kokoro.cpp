@@ -110,10 +110,7 @@ impl Engine {
     pub fn synthesize(&mut self, text: &str, voice: &str, speed: f32) -> Result<Audio, SynthesisError> {
         // Reject rather than truncate: a NUL would silently end the string at the C boundary, losing the tail.
         let c_arg = |text: &str| {
-            c_string(text).map_err(|message| SynthesisError {
-                status: kokoro_status::ERROR_INVALID_ARGUMENT,
-                message,
-            })
+            c_string(text).map_err(|message| SynthesisError { status: kokoro_status::ERROR_INVALID_ARGUMENT, message })
         };
         let text = c_arg(text)?;
         let voice = c_arg(voice)?;
