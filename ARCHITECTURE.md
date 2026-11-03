@@ -231,7 +231,8 @@ copies `kokoro-server` next to `libkokoro`; `build.rs` links against the library
 - `AppState` (`routes.rs`) keeps the engine behind a `tokio::sync::Mutex`. A request waits for the lock without a
   thread, then synthesizes in `spawn_blocking`, which also reads the thread-local `kokoro_last_error()`.
 - `POST /v1/audio/speech` parses the JSON body (`speech_request.rs`), then encodes the float samples as 16-bit PCM
-  WAV or raw PCM (`audio_encoding.rs`). Other formats get an OpenAI-style 400 error.
+  WAV or raw PCM (`audio_encoding.rs`). Other formats get an OpenAI-style 400 error. `input` and `voice` must not
+  contain a NUL byte (C strings would silently truncate it); such requests get a 400 naming the field.
 - `GET /v1/audio/voices` lists the loaded voices; `GET /health` answers `{"status":"ok"}`.
 - The listen socket (`listener.rs`) sets `SO_REUSEADDR` (`SO_EXCLUSIVEADDRUSE` on Windows) and never
   `SO_REUSEPORT`, so a second server on the same port fails instead of sharing it.

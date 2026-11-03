@@ -108,9 +108,15 @@ impl Engine {
     }
 
     pub fn synthesize(&mut self, text: &str, voice: &str, speed: f32) -> Result<Audio, SynthesisError> {
-        // C strings end at the first NUL, as with the C++ server's c_str().
-        let c_prefix = |s: &str| CString::new(s.split('\0').next().unwrap_or_default()).expect("prefix has no NUL");
-        let (text, voice) = (c_prefix(text), c_prefix(voice));
+        // Reject rather than truncate: a NUL would silently end the string at the C boundary, losing the tail.
+        let c_arg = |text: &str| {
+            c_string(text).map_err(|message| SynthesisError {
+                status: kokoro_status::ERROR_INVALID_ARGUMENT,
+                message,
+            })
+        };
+        let text = c_arg(text)?;
+        let voice = c_arg(voice)?;
         let mut audio = Audio(kokoro_audio { samples: ptr::null_mut(), num_samples: 0, sample_rate: 0 });
         // SAFETY: self.ctx is live and exclusively borrowed; strings outlive the call; audio.0 is a valid out value.
         let status = unsafe { ffi::kokoro_synthesize(self.ctx, text.as_ptr(), voice.as_ptr(), speed, 0, &mut audio.0) };

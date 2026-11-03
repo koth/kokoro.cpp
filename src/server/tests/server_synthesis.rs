@@ -74,6 +74,14 @@ fn server_synthesizes_audio() {
     assert_eq!((pcm.status, pcm.content_type.as_str()), (200, "audio/pcm"));
     assert!(!pcm.body.is_empty() && pcm.body.len() % 2 == 0);
 
+    // A NUL byte must produce a 400 naming the field, never 200 with truncated audio.
+    let nul_input = post(&agent, &url, r#"{"input":"Hello\u0000world"}"#);
+    assert_eq!(nul_input.status, 400);
+    assert_eq!(json(&nul_input)["error"]["param"], "input");
+    let nul_voice = post(&agent, &url, r#"{"input":"Hello world","voice":"af_maple\u0000"}"#);
+    assert_eq!(nul_voice.status, 400);
+    assert_eq!(json(&nul_voice)["error"]["param"], "voice");
+
     let voice = post(&agent, &url, r#"{"input":"Hello world","voice":"nope"}"#);
     assert_eq!(voice.status, 400);
     assert_eq!(json(&voice)["error"]["param"], "voice");
